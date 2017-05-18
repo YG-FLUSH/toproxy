@@ -45,7 +45,7 @@ class ProxyHandler(tornado.web.RequestHandler):
                     self.write(response.body)
             self.finish()
 
-        if base_auth_user:
+        if self.application.settings.get("base_auth", None):
             auth_header = self.request.headers.get('Authorization', '')
             if not base_auth_valid(auth_header):
                 self.set_status(403)
@@ -66,7 +66,7 @@ class ProxyHandler(tornado.web.RequestHandler):
             self.set_status(403)
             self.write('')
             self.finish()
-            return 
+            return
         body = self.request.body
         if not body:
             body = None
@@ -155,9 +155,12 @@ def get_proxy(url):
     return os.environ.get(proxy_key)
 
 def base_auth_valid(auth_header):
-    from tornado.escape import utf8
-    from hashlib import md5
-    # Basic Zm9vOmJhcg==
+    if not auth_header:
+        return False
+
+    if ' ' not in auth_header:
+        return False
+
     auth_mode, auth_base64 = auth_header.split(' ', 1)
     assert auth_mode == 'Basic'
     # 'Zm9vOmJhcg==' == base64("foo:bar")
@@ -199,10 +202,16 @@ def fetch_request(url, callback, **kwargs):
 
 
 
-def run_proxy(port, start_ioloop=True):
+def run_proxy(port, start_ioloop=True, base_auth_user=None, base_auth_passwd=None):
+    settings = {}
+    if base_auth_user:
+        settings['base_auth'] = {
+                'base_auth_user': base_auth_user,
+                'base_auth_passwd': base_auth_passwd,
+        }
     app = tornado.web.Application([
         (r'.*', ProxyHandler),
-    ])
+    ], **settings)
     app.listen(port)
     ioloop = tornado.ioloop.IOLoop.instance()
     if start_ioloop:
@@ -212,7 +221,7 @@ if __name__ == '__main__':
     white_iplist = []
     import argparse
     parser = argparse.ArgumentParser(description='''python -m toproxy/proxy  -p 8888 -w 127.0.0.1,8.8.8.8 -u xiaorui:fengyun''')
-    
+
     parser.add_argument('-p','--port', help='tonado proxy listen port', action='store',default=8888)
     parser.add_argument('-w','--white', help='white ip list ---> 127.0.0.1,215.8.1.3', action='store',default=[])
     parser.add_argument('-u','--user',help='Base Auth , xiaoming:123123',action='store',default=None)
@@ -225,6 +234,6 @@ if __name__ == '__main__':
         base_auth_user,base_auth_passwd = args.user.split(':')
     else:
         base_auth_user,base_auth_passwd = None,None
-        
+
     print ("Starting HTTP proxy on port %d" % port)
-    run_proxy(port)
+    run_proxy(port, base_auth_user=base_auth_user, base_auth_passwd=base_auth_passwd)
